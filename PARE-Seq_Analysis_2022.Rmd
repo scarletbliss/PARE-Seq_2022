@@ -1,0 +1,451 @@
+---
+title: "PARE-Seq Analyses 2022"
+author: "Scarlet Bliss"
+date: "1/26/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+library(dplyr)
+library(readr)
+library(car)
+library(MASS)
+library(multilevel)
+library(sjPlot)
+library(glmnet)
+library(olsrr)
+library(effsize)
+library(gridExtra)
+```
+
+```{r}
+df6 <- read.csv("fullrecodeNEW.csv")
+```
+
+#Recoding to make binary variables for analysis 
+```{r}
+df7 <- df6 %>% mutate(racecat2=dplyr::recode(racecat, #making a binary race/ethnicity variable
+                                             "0"=0, #white
+                                             "1"=1, #black
+                                             "3"=0, #asian
+                                             "2"=1, #middle eastern/north african
+                                             "4"=1, #indigenous
+                                             "6"=1))  %>% #biracial/multiracial
+              mutate(workhrs2=dplyr::recode(workhrs, #making a binary work hours variable
+                                            "0"=0,#no
+                                            "1"=0, #1-10
+                                            "2"=1, #11-20
+                                            "3"=1, #21-30
+                                            "4"=1)) %>% #31+
+              mutate(gender=dplyr::recode(gender,
+                                          "0"=1, #females
+                                          "1"=0)) %>% #males
+             mutate(workspace2 = case_when(workspace == 2 ~0, #making a binary workspace rating variable
+                                           workspace==0~0, #high quality
+                                            workspace==3 ~1)) #low quality
+df7$school <- factor(df7$school, levels=c("RU", "QU", "DTCC", "NSCC"))
+df7 <- df7 %>% mutate_at(c(5:9,14,17), as.factor)
+
+```
+
+
+#Summary statistics: Mean, SD, T-Tests, Cohen's d
+```{r}
+#learning gains: mean and SD
+mean(df7$totalpre)
+mean(df7$totalpost)
+sd(df7$totalpre)
+sd(df7$totalpost)
+
+TTest.lg <- t.test(df7$totalpost, df7$totalpre, 
+                paired = TRUE, alternative = "greater")
+TTest.lg
+#effect size
+cohen.d(df7$totalpost, df7$totalpre) #0.221
+
+#stem identity gains: mean and SD
+mean(df7$stemidenpre)
+mean(df7$stemidenpost)
+sd(df7$stemidenpre)
+sd(df7$stemidenpost)
+
+TTest.si <- t.test(df7$stemidenpost, df7$stemidenpre, 
+                paired = TRUE, alternative = "greater")
+TTest.si
+#effect size
+cohen.d(df7$stemidenpost, df7$stemidenpre) #0.299, small
+```
+
+ICCs: influence of school as cluster variable
+```{r}
+aov.lg <- aov(totaldiff ~ school, df7)
+aov.st <- aov(stemIDchange ~ school, df7)
+
+ICC1(aov.lg)
+ICC1(aov.st)
+
+#The ICC here for learning gains is 0.08, but in the full mixed effects model it was 0.12. Which should be reported?
+```
+
+
+#LEARNING GAINS: full model
+```{r}
+lg_full <- lm(totaldiff ~ gender+racecat2+parentedu+workhrs+workspace2+completion+school, data=df7)
+summary(lg_full)
+Anova(lg_full)
+
+sjPlot::tab_model(lg_full,
+                  show.re.var=TRUE,
+                  show.se=TRUE,
+                  dv.labels= 'Full Model: Learning Gains by All Predictors')
+```
+Assessing collinearity of covariates
+```{r}
+vcov(lg_full)
+ols_vif_tol(lg_full)
+#none seem to be highly collinear
+```
+
+
+#LEARNING GAINS Bivariate analyses
+Learning gains & Racecat2 (binary) bivariate model
+```{r}
+lg_raceeth_bin <- lm(totaldiff ~ racecat2, data=df7)
+summary(lg_raceeth_bin)
+Anova(lg_raceeth_bin)
+
+sjPlot::tab_model(lg_raceeth_bin,
+                  show.re.var=TRUE,
+                  dv.labels= 'Bivariate Analyses: Race/Ethnicity')
+
+#p = 0.087
+```
+Learning gains & racecat (categorical race variable)
+```{r}
+lg_raceeth <- lm(totaldiff ~ racecat, data=df7)
+summary(lg_raceeth)
+Anova(lg_raceeth)
+
+sjPlot::tab_model(lg_raceeth,
+                  show.re.var=TRUE,
+                  dv.labels= 'Bivariate Analyses: Race/Ethnicity')
+#indigenous and bi-racial/multiracial categories statistically significant. 
+```
+
+Learning gains & Workhrs Bivariate model
+```{r}
+lg_workhrs <- lm(totaldiff ~ workhrs, data=df7)
+summary(lg_workhrs)
+Anova(lg_workhrs)
+
+sjPlot::tab_model(lg_workhrs,
+                  show.re.var=TRUE,
+                  dv.labels= 'Bivariate Analyses: workhrs')
+
+#no statistical significance (category 4, 31+h, approaches significance. p=0.08)
+```
+
+Learning gains & Gender Bivariate model
+```{r}
+lg_gender <- lm(totaldiff ~ gender, data=df7)
+summary(lg_gender)
+Anova(lg_gender)
+
+sjPlot::tab_model(lg_gender,
+                  show.re.var=TRUE,
+                  dv.labels= 'Bivariate Analyses: Gender')
+```
+
+Learning gains & Workspace bivariate model
+```{r}
+lg_workspace <- lm(totaldiff ~ workspace2, data=df7)
+summary(lg_workspace)
+Anova(lg_workspace)
+
+sjPlot::tab_model(lg_workspace,
+                  show.re.var=TRUE,
+                  dv.labels= 'Bivariate Analyses: Self-rated quality of workspace')
+#approaches significance, p=0.076
+```
+
+
+Learning gains & Parentedu bivariate model
+```{r}
+lg_parentedu <- lm(totaldiff ~ parentedu, data=df7)
+summary(lg_parentedu)
+Anova(lg_parentedu)
+
+sjPlot::tab_model(lg_parentedu,
+                  show.re.var=TRUE,
+                  dv.labels= 'Bivariate Analyses: Parent Education')
+```
+
+Learning gains & Completion bivariate model
+```{r}
+lg_completion <- lm(totaldiff ~ completion, data=df7)
+summary(lg_completion)
+Anova(lg_completion)
+
+sjPlot::tab_model(lg_completion,
+                  show.re.var=TRUE,
+                  dv.labels= 'Bivariate Analyses: Completion')
+```
+Learning gains & school bivariate model
+```{r}
+lg_school <- lm(totaldiff ~ school, data=df7)
+summary(lg_school)
+Anova(lg_school)
+
+sjPlot::tab_model(lg_school,
+                  show.re.var=TRUE,
+                  dv.labels= 'Bivariate Analyses: School')
+```
+Table of bivariate results: learning gains
+```{r}
+learning.gains.results <- rbind(
+  tidy(lg_gender, conf.int=T)[2,],
+  tidy(lg_parentedu, conf.int=T)[2,],
+  tidy(lg_raceeth_bin, conf.int=T)[2,],
+  tidy(lg_workhrs, conf.int=T)[2,],
+  tidy(lg_workhrs, conf.int=T)[3,],
+  tidy(lg_workhrs, conf.int=T)[4,],
+  tidy(st_workhrs, conf.int=T)[5,],
+  tidy(lg_workspace, conf.int=T)[2,],
+  tidy(lg_completion, conf.int=T)[2,],
+  tidy(lg_completion, conf.int=T)[3,],
+  tidy(lg_completion, conf.int=T)[4,],
+  tidy(lg_school, conf.int=T)[2,],
+  tidy(lg_school, conf.int=T)[3,],
+  tidy(lg_school, conf.int=T)[4,]) 
+
+learning.gains.results
+```
+
+
+#STEM IDENTITY:full fixed-effects model
+```{r}
+st_full <- lm(stemIDchange ~ gender+racecat2+workhrs+parentedu+completion+workspace2+school, data=df7)
+summary(st_full)
+Anova(st_full)
+
+sjPlot::tab_model(st_full,
+                  show.re.var=TRUE,
+                  show.se=TRUE,
+                  dv.labels= 'Full Fixed Effects Model: STEM Identity by All Predictors')
+```
+
+#BIVARIATE STEM ID MODELS
+STEM ID & Race/ethnicity (binary)
+```{r}
+st_raceeth_bin <- lm(stemIDchange ~ racecat2, data=df7)
+summary(st_raceeth_bin)
+Anova(st_raceeth_bin)
+
+sjPlot::tab_model(st_raceeth_bin,
+                  show.re.var=TRUE,
+                  dv.labels= 'STEM ID Bivariate Analyses: Race/Ethnicity')
+```
+
+STEM ID & Gender
+```{r}
+st_gender <- lm(stemIDchange ~ gender, data=df7)
+summary(st_gender)
+Anova(st_gender)
+
+sjPlot::tab_model(st_gender,
+                  show.re.var=TRUE,
+                  dv.labels= 'STEM ID Bivariate Analyses: Gender')
+```
+
+STEM ID & Parentedu
+```{r}
+st_parentedu <- lm(stemIDchange ~ parentedu, data=df7)
+summary(st_parentedu)
+Anova(st_parentedu)
+
+sjPlot::tab_model(st_parentedu,
+                  show.re.var=TRUE,
+                  dv.labels= 'STEM ID Bivariate Analyses: Parent Education')
+```
+
+STEM ID & Workhrs
+```{r}
+st_workhrs <- lm(stemIDchange ~ workhrs, data=df7)
+summary(st_workhrs)
+Anova(st_workhrs)
+
+sjPlot::tab_model(st_workhrs,
+                  show.re.var=TRUE,
+                  dv.labels= 'STEM ID Bivariate Analyses: Work Hours')
+```
+
+STEM ID & Workspace
+```{r}
+st_workspace <- lm(stemIDchange ~ workspace, data=df7)
+summary(st_workspace)
+Anova(st_workspace)
+
+sjPlot::tab_model(st_workspace,
+                  show.re.var=TRUE,
+                  dv.labels= 'STEM ID Bivariate Analyses: Work Space')
+```
+STEM ID & Completion
+```{r}
+st_completion <- lm(stemIDchange ~ completion, data=df7)
+summary(st_completion)
+Anova(st_completion)
+
+sjPlot::tab_model(st_completion,
+                  show.re.var=TRUE,
+                  dv.labels= 'STEM ID Bivariate Analyses: Completion')
+```
+STEM ID & School
+```{r}
+st_school <- lm(stemIDchange ~ school, data=df7)
+summary(st_school)
+Anova(st_school)
+
+sjPlot::tab_model(st_school,
+                  show.re.var=TRUE,
+                  dv.labels= 'STEM ID Bivariate Analyses: Completion')
+```
+Table of bivariate results: STEM Idenity
+```{r}
+STEM.identity.results <- rbind(
+  tidy(st_gender, conf.int=T)[2,],
+  tidy(st_parentedu, conf.int=T)[2,],
+  tidy(st_raceeth_bin, conf.int=T)[2,],
+  tidy(st_workhrs, conf.int=T)[2,],
+  tidy(st_workhrs, conf.int=T)[3,],
+  tidy(st_workhrs, conf.int=T)[4,],
+  tidy(st_workhrs, conf.int=T)[5,],
+  tidy(st_workspace, conf.int=T)[2,],
+  tidy(st_completion, conf.int=T)[2,],
+  tidy(st_completion, conf.int=T)[3,],
+  tidy(st_completion, conf.int=T)[4,],
+  tidy(st_school, conf.int=T)[2,],
+  tidy(st_school, conf.int=T)[3,],
+  tidy(st_school, conf.int=T)[4,]) 
+
+STEM.identity.results
+```
+
+
+#DESCRIPTIVE STATISTICS (Tables 4a & 4b)
+
+Learning gains (4a)
+Learning Gains by gender
+```{r}
+tapply(df7$totalpre, df7$gender, mean)
+tapply(df7$totalpost, df7$gender, mean)
+```
+Learning Gains by Work hours
+```{r}
+tapply(df7$totalpre, df7$workhrs, mean)
+tapply(df7$totalpost, df7$workhrs, mean)
+```
+
+Learning Gains by Parent edu
+```{r}
+tapply(df7$totalpre, df7$parentedu, mean)
+tapply(df7$totalpost, df7$parentedu, mean)
+```
+
+
+Learning Gains by Workspace
+```{r}
+tapply(df7$totalpre, df7$workspace2, mean)
+tapply(df7$totalpost, df7$workspace2, mean)
+
+```
+
+
+Learning Gains by school
+```{r}
+tapply(df7$totalpre, df7$school, mean)
+tapply(df7$totalpost, df7$school, mean)
+```
+
+STEM Identity Change (4b)
+STEM Identity Change by Race/Ethnicity
+```{r}
+tapply(df7$stemidenpre, df7$racecat2, mean)
+tapply(df7$stemidenpost, df7$racecat2, mean)
+```
+
+STEM ID by gender
+```{r}
+tapply(df7$stemidenpre, df7$gender, mean)
+tapply(df7$stemidenpost, df7$gender, mean)
+```
+STEM ID by Work hours
+```{r}
+tapply(df7$stemidenpre, df7$workhrs, mean)
+tapply(df7$stemidenpost, df7$workhrs, mean)
+```
+
+STEM ID by Parent edu
+```{r}
+tapply(df7$stemidenpre, df7$parentedu, mean)
+tapply(df7$stemidenpost, df7$parentedu, mean)
+```
+
+
+STEM ID by Workspace
+```{r}
+tapply(df7$stemidenpre, df7$workspace2, mean)
+tapply(df7$stemidenpost, df7$workspace2, mean)
+```
+
+STEM ID by School
+```{r}
+tapply(df7$stemidenpre, df7$school, mean)
+tapply(df7$stemidenpost, df7$school, mean)
+```
+
+Learning Gains by Race/Ethnicity
+```{r}
+tapply(df7$totalpre, df7$racecat2, mean)
+tapply(df7$totalpost, df7$racecat2, mean)
+```
+
+
+Work hours and race/ethnicity crosstab
+```{r}
+CrossTable(df7$racecat2, df7$workhrs)
+CrossTable(df7$racecat2, df7$workhrs2)
+```
+
+#Box Plots (Fig. 4)
+```{r}
+df8 <- df7%>% pivot_longer(cols=c('totalpre', 'totalpost', 'stemidenpre', 'stemidenpost'),
+                           names_to='score_name',
+                           values_to='value')
+#learning gains
+d.boxplot.lg <- df8%>%filter(score_name==c('totalpre', 'totalpost'))
+d.boxplot.lg$score_name <- factor(d.boxplot.lg$score_name, levels=c('totalpre', 'totalpost'))
+boxplot.lg <- ggplot(data=d.boxplot.lg, aes(x=score_name, y=value))+
+  geom_boxplot(width=0.35)+
+  theme_classic()+
+  labs(y="Assessment Score (out of 10)")+ 
+  scale_x_discrete(labels=c('Pre-Assessment', 'Post-Assessment'))+
+  theme(axis.title.x=element_blank())
+boxplot.lg
+
+#stem identity
+d.boxplot.st <- df8%>%filter(score_name==c('stemidenpre', 'stemidenpost'))
+d.boxplot.st$score_name <- factor(d.boxplot.st$score_name, levels=c('stemidenpre', 'stemidenpost'))
+boxplot.st <- ggplot(data=d.boxplot.st, aes(x=score_name, y=value))+
+  geom_boxplot(width=0.35)+
+  theme_classic()+
+  labs(y="STEM Identity Score (out of 7)")+ 
+  scale_x_discrete(labels=c('Pre-Survey', 'Post-Survey'))+
+  theme(axis.title.x=element_blank())
+boxplot.st
+
+p <- grid.arrange(boxplot.lg, boxplot.st, ncol=2) 
+ggsave("outcome.boxplots.png", p, height = 4, width = 7)
+```
+
