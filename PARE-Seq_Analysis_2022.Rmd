@@ -21,7 +21,7 @@ library(gridExtra)
 ```
 
 ```{r}
-df6 <- read.csv("fullrecodeNEW.csv")
+df6 <- read.csv("pareseq_full_12.29.22.csv")
 ```
 
 #Recoding to make binary variables for analysis 
